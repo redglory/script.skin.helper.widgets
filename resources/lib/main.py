@@ -7,14 +7,18 @@
     main plugin listing and entry point
 '''
 
-import urlparse
-from utils import log_msg, log_exception, ADDON_ID, create_main_entry
+import os, sys
+if sys.version_info.major == 3:
+    import urllib.parse as urlparse
+else:
+    import urlparse
+import random
 import xbmcplugin
 import xbmc
 import xbmcaddon
 import xbmcgui
-import sys
 from metadatautils import MetadataUtils
+from resources.lib.utils import log_msg, log_exception, ADDON_ID, create_main_entry
 
 ADDON_HANDLE = int(sys.argv[1])
 
@@ -54,21 +58,39 @@ class Main(object):
     def get_options(self):
         '''get the options provided to the plugin path'''
 
-        options = dict(urlparse.parse_qsl(sys.argv[2].replace('?', '').lower().decode("utf-8")))
+        if sys.version_info.major == 3:
+            options = dict(urlparse.parse_qsl(sys.argv[2].replace('?', '').lower()))
+        else:
+            options = dict(urlparse.parse_qsl(sys.argv[2].replace('?', '').lower().decode("utf-8")))
 
-        if not "mediatype" in options and "action" in options:
+        # set the widget settings as options
+        options["hide_watched"] = self.addon.getSetting("hide_watched") == "true"
+        if self.addon.getSetting("hide_watched_recent") == "true" and "recent" in options.get("action", ""):
+            options["hide_watched"] = True
+        options["num_recent_similar"] = int(self.addon.getSetting("num_recent_similar"))
+        options["exp_recommended"] = self.addon.getSetting("exp_recommended") == "true"
+        options["hide_watched_similar"] = self.addon.getSetting("hide_watched_similar") == "true"
+        options["next_inprogress_only"] = self.addon.getSetting("nextup_inprogressonly") == "true"
+        options["episodes_enable_specials"] = self.addon.getSetting("episodes_enable_specials") == "true"
+        options["group_episodes"] = self.addon.getSetting("episodes_grouping") == "true"
+        if "limit" in options:
+            options["limit"] = int(options["limit"])
+        else:
+            options["limit"] = int(self.addon.getSetting("default_limit"))
+
+        if "mediatype" not in options and "action" in options:
             # get the mediatype and action from the path (for backwards compatability with old style paths)
             for item in [
-                ("movies", "movies"),
-                ("shows", "tvshows"),
-                ("episode", "episodes"),
-                ("musicvideos", "musicvideos"),
-                ("pvr", "pvr"),
-                ("albums", "albums"),
-                ("songs", "songs"),
-                ("artists", "artists"),
-                ("media", "media"),
-                ("favourites", "favourites"), 
+                    ("movies", "movies"),
+                    ("shows", "tvshows"),
+                    ("episode", "episodes"),
+                    ("musicvideos", "musicvideos"),
+                    ("pvr", "pvr"),
+                    ("albums", "albums"),
+                    ("songs", "songs"),
+                    ("artists", "artists"),
+                    ("media", "media"),
+                    ("favourites", "favourites"),
                     ("favorites", "favourites")]:
                 if item[0] in options["action"]:
                     options["mediatype"] = item[1]
@@ -95,17 +117,8 @@ class Main(object):
                 options["mediatype"] = "tvshows"
                 options["random"] = True
 
-        # set the widget settings as options
-        options["hide_watched"] = self.addon.getSetting("hide_watched") == "true"
-        if self.addon.getSetting("hide_watched_recent") == "true" and "recent" in options.get("action", ""):
-            options["hide_watched"] = True
-        options["next_inprogress_only"] = self.addon.getSetting("nextup_inprogressonly") == "true"
-        options["episodes_enable_specials"] = self.addon.getSetting("episodes_enable_specials") == "true"
-        options["group_episodes"] = self.addon.getSetting("episodes_grouping") == "true"
-        if "limit" in options:
-            options["limit"] = int(options["limit"])
-        else:
-            options["limit"] = int(self.addon.getSetting("default_limit"))
+        #options["skipcache"] = "true"
+
         return options
 
     def show_widget_listing(self):
@@ -120,19 +133,35 @@ class Main(object):
 
         # try to get from cache first...
         all_items = []
-        cache_str = "SkinHelper.Widgets.%s.%s.%s.%s.%s" % (media_type, 
-                    action, self.options["limit"], self.options.get("path"), self.options.get("tag"))
+        # alter cache_str depending on whether "tag" is available
+        if self.options["action"] == "similar":
+            # if action is similar, use imdbid
+            cache_id = self.options.get("imdbid", "")
+            # if similar was called without imdbid, skip cache
+            if not cache_id:
+                self.options["skipcache"] = "true"
+        elif self.options["action"] == "playlist" and self.options["mediatype"] == "media":
+            # if action is mixed playlist, use playlist labels
+            cache_id = self.options.get("movie_label")+self.options.get("tv_label")
+        else:
+            # use tag otherwise
+            cache_id = self.options.get("tag")
+        # set cache_str
+        cache_str = "SkinHelper.Widgets.%s.%s.%s.%s.%s" % \
+            (media_type, action, self.options["limit"], self.options.get("path"), cache_id)
         if not self.win.getProperty("widgetreload2"):
             # at startup we simply accept whatever is in the cache
             cache_checksum = None
         else:
             # we use a checksum based on the reloadparam to make sure we have the most recent data
-            cache_checksum = self.options.get("reload","")
-        cache = self.metadatautils.cache.get(cache_str, checksum=cache_checksum)
-        if cache and not self.options.get("skipcache") == "true":
-            log_msg("MEDIATYPE: %s - ACTION: %s - PATH: %s - TAG: %s -- got items from cache - CHECKSUM: %s"
-                    % (media_type, action, self.options.get("path"), self.options.get("tag"), cache_checksum))
-            all_items = cache
+            cache_checksum = self.options.get("reload", "")
+        # only check cache if not "skipcache"
+        if not self.options.get("skipcache") == "true":
+            cache = self.metadatautils.cache.get(cache_str, checksum=cache_checksum)
+            if cache:
+                log_msg("MEDIATYPE: %s - ACTION: %s - PATH: %s - TAG: %s -- got items from cache - CHECKSUM: %s"
+                        % (media_type, action, self.options.get("path"), self.options.get("tag"), cache_checksum))
+                all_items = cache
 
         # Call the correct method to get the content from json when no cache
         if not all_items:

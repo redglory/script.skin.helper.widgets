@@ -6,11 +6,11 @@
     episodes.py
     all episodes widgets provided by the script
 '''
-
-from utils import create_main_entry
+import os, sys
 from operator import itemgetter
-from metadatautils import kodi_constants
 import xbmc
+from metadatautils import kodi_constants
+from resources.lib.utils import create_main_entry,log_msg
 
 class Episodes(object):
     '''all episode widgets provided by the script'''
@@ -64,6 +64,7 @@ class Episodes(object):
 
     def recent(self):
         ''' get recently added episodes '''
+        log_msg("recent widget", xbmc.LOGINFO)
         tvshow_episodes = {}
         total_count = 0
         unique_count = 0
@@ -78,8 +79,10 @@ class Episodes(object):
             recent_episodes = self.metadatautils.kodidb.episodes(
                 sort=kodi_constants.SORT_DATEADDED, filters=filters, limits=(
                     total_count, self.options["limit"] + total_count))
+            log_msg("Check grouping setting", xbmc.LOGINFO)
             if not self.options["group_episodes"]:
                 # grouping is not enabled, just return the result
+                log_msg("Grouping not enabled, return normal result", xbmc.LOGINFO)
                 return recent_episodes
 
             if len(recent_episodes) < self.options["limit"]:
@@ -91,13 +94,18 @@ class Episodes(object):
             for episode in recent_episodes:
                 total_count += 1
                 unique_key = "%s-%s-%s" % (episode["tvshowid"], episode["dateadded"].split(" ")[0], episode["season"])
+                log_msg("Unique %s" % unique_key, xbmc.LOGINFO)
                 if unique_key not in tvshow_episodes:
                     tvshow_episodes[unique_key] = []
                     unique_count += 1
                 tvshow_episodes[unique_key].append(episode)
 
+        log_msg("Return entries sorted by dateadded", xbmc.LOGINFO)
         # create our entries and return the result sorted by dateadded
-        all_items = self.metadatautils.process_method_on_list(self.create_grouped_entry, tvshow_episodes.itervalues())
+        if sys.version_info.major == 3:
+            all_items = self.metadatautils.process_method_on_list(self.create_grouped_entry, tvshow_episodes.values())
+        else:
+            all_items = self.metadatautils.process_method_on_list(self.create_grouped_entry, tvshow_episodes.itervalues())
         return sorted(all_items, key=itemgetter("dateadded"), reverse=True)[:self.options["limit"]]
 
     def random(self):
@@ -152,8 +160,8 @@ class Episodes(object):
         # First we get a list of all the inprogress/unwatched TV shows ordered by lastplayed
         all_shows = self.metadatautils.kodidb.tvshows(sort=kodi_constants.SORT_LASTPLAYED, filters=filters,
                                                       limits=(0, self.options["limit"]))
-        return self.metadatautils.process_method_on_list(self.get_next_episode_for_show, [
-                                                         d['tvshowid'] for d in all_shows])
+        return self.metadatautils.process_method_on_list(self.get_next_episode_for_show,
+                                                         [d['tvshowid'] for d in all_shows])
 
     def get_next_episode_for_show(self, show_id):
         '''
@@ -257,9 +265,8 @@ class Episodes(object):
                    xbmc.getLocalizedString(570), firstepisode["dateadded"].split(" ")[0])
             item["extraproperties"] = {"UnWatchedEpisodes": "%s" % len(tvshow_episodes)}
             return item
-        else:
-            # just add the single item
-            return firstepisode
+        # just add the single item
+        return firstepisode
 
     @staticmethod
     def map_episode_props(episode_details):
