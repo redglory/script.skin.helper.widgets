@@ -25,27 +25,34 @@ class Tvshows(object):
     def listing(self):
         '''main listing with all our tvshow nodes'''
         tag = self.options.get("tag", "")
+        extended_info_setting = self.options["extended_info"]
         if tag:
             label_prefix = u"%s - " % tag
         else:
             label_prefix = u""
         icon = "DefaultTvShows.png"
+
         all_items = [
             (label_prefix + self.addon.getLocalizedString(32044), "inprogress&mediatype=tvshows&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32045), "recent&mediatype=tvshows&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32092), "newrelease&mediatype=tvshows&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32097), "toprated&mediatype=tvshows&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32037), "recommended&mediatype=tvshows&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32041), "random&mediatype=tvshows&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32047), "top250&mediatype=tvshows&tag=%s" % tag, icon),
             (label_prefix + xbmc.getLocalizedString(135), "browsegenres&mediatype=tvshows&tag=%s" % tag, icon),
         ]
+
         if not tag:
             all_items += [
                 (self.addon.getLocalizedString(32014), "similar&mediatype=tvshows", icon),
+                (self.addon.getLocalizedString(32077), "forgenre&mediatype=tvshows", icon),
                 (xbmc.getLocalizedString(10134), "favourites&mediatype=tvshows", icon),
                 (self.addon.getLocalizedString(32078), "playlistslisting&mediatype=tvshows", icon),
                 (self.addon.getLocalizedString(32076), "playlistslisting&mediatype=tvshows&tag=ref", icon),
                 (xbmc.getLocalizedString(20459), "tagslisting&mediatype=tvshows", icon)
             ]
+
         if tag:
             # add episode nodes with tag filter
             all_items += [
@@ -57,6 +64,15 @@ class Tvshows(object):
                  tag, icon),
                 (label_prefix + self.addon.getLocalizedString(32008), "random&mediatype=episodes&tag=%s" %
                  tag, icon)]
+
+        if extended_info_setting:
+            all_items += [
+                (self.addon.getLocalizedString(32100) +' - '+ self.addon.getLocalizedString(32111), "extendedpopulartmdb&mediatype=tvshows", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32111), "extendedpopulartrakt&mediatype=tvshows", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32104), "extendedtrending&mediatype=tvshows", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32107), "extendedmostplayed&mediatype=tvshows", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32110), "extendedmostwatched&mediatype=tvshows", icon)
+            ]
         return self.metadatautils.process_method_on_list(create_main_entry, all_items)
 
     def tagslisting(self):
@@ -104,6 +120,40 @@ class Tvshows(object):
         # return list sorted by recommended score
         all_items = self.sort_by_recommended(all_items, ref_items)
         return self.metadatautils.process_method_on_list(self.process_tvshow, all_items)
+
+    def newrelease(self):
+        """ get recently added sorted by year tvshows """
+        filters = []
+        if self.options["hide_watched"]:
+            filters.append(kodi_constants.FILTER_UNWATCHED)
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        all_items = self.metadatautils.kodidb.tvshows(sort=kodi_constants.SORT_DATEADDED, filters=filters,
+                                                      limits=(0, self.options["limit"]))
+        all_items = self.metadatautils.process_method_on_list(self.process_tvshow, all_items)
+        return sorted(all_items, key=itemgetter("year"), reverse=True)
+
+    def unwatched(self):
+        """ get unwatched tvshows """
+        filters = [kodi_constants.FILTER_UNWATCHED]
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        all_items = self.metadatautils.kodidb.tvshows(sort=kodi_constants.SORT_RANDOM, filters=filters,
+                                                      limits=(0, self.options["limit"]))
+        all_items = self.metadatautils.process_method_on_list(self.process_tvshow, all_items)
+        return all_items
+
+    def toprated(self):
+        """ get recommended tvshows - library tvshows with score higher than 7"""
+        filters = [kodi_constants.FILTER_RATING]
+        if self.options["hide_watched"]:
+            filters.append(kodi_constants.FILTER_UNWATCHED)
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        tvshows = self.metadatautils.kodidb.tvshows(
+            sort=kodi_constants.SORT_RATING, filters=filters, limits=(
+                0, self.options["limit"]))
+        return self.metadatautils.process_method_on_list(self.process_tvshow, tvshows)
 
     def recommended(self):
         ''' get recommended tvshows - library tvshows with score higher than 7
@@ -201,6 +251,22 @@ class Tvshows(object):
         # return processed show
         return self.metadatautils.process_method_on_list(self.process_tvshow, tvshows)
 
+    def nextshows(self):
+        """ get next episodes """
+        filters = [kodi_constants.FILTER_UNWATCHED]
+        if self.options["next_inprogress_only"]:
+            filters = [kodi_constants.FILTER_INPROGRESS]
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        if self.options.get("path"):
+            filters.append({"operator": "startswith", "field": "path", "value": self.options["path"]})
+        # First we get a list of all the inprogress/unwatched TV shows ordered by lastplayed
+        return self.metadatautils.process_method_on_list(self.process_tvshow,
+                                                         self.metadatautils.kodidb.tvshows(
+                                                             sort=kodi_constants.SORT_LASTPLAYED, filters=filters,
+                                                             limits=(0, self.options["limit"]))
+                                                         )
+
     def forgenre(self):
         ''' get top rated tvshows for given genre'''
         genre = self.options.get("genre", "")
@@ -295,6 +361,53 @@ class Tvshows(object):
         result = eps.nextaired()
         del eps
         return result
+
+    def extendedpopulartmdb(self):
+        """gets popular tvshows in library from tmdb"""
+        all_items = self.get_extended_matches(self.get_extended_list('populartvshows'))
+        return self.metadatautils.process_method_on_list(self.process_tvshow, all_items[:self.options["limit"]])
+
+    def extendedpopulartrakt(self):
+        """gets popular tvshows in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('popularshows'))
+        return self.metadatautils.process_method_on_list(self.process_tvshow, all_items[:self.options["limit"]])
+
+    def extendedtrending(self):
+        """gets trending tvshows in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('trendingshows'))
+        return self.metadatautils.process_method_on_list(self.process_tvshow, all_items[:self.options["limit"]])
+
+    def extendedmostplayed(self):
+        """gets most played tvshows in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('mostplayedshows'))
+        return self.metadatautils.process_method_on_list(self.process_tvshow, all_items[:self.options["limit"]])
+
+    def extendedmostwatched(self):
+        """gets most watched tvshows in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('mostwatchedshows'))
+        return self.metadatautils.process_method_on_list(self.process_tvshow, all_items[:self.options["limit"]])
+
+    def get_extended_matches(self, extended_items):
+        """gets tv shows that are in the given extended info list of items"""
+        all_items = []
+        all_tvshows = self.metadatautils.kodidb.tvshows()
+        for tvshow in all_tvshows:
+            # extendedinfo does not supply imdb id for tvshow, try match on title and year basis
+            tvshow_titleandyear = (tvshow['title'], tvshow['year'])
+            if tvshow_titleandyear in extended_items:
+                tvshow["extendedindex"] = extended_items.index(tvshow_titleandyear)
+                all_items.append(tvshow)
+        return sorted(all_items, key=itemgetter("extendedindex"))
+
+    def get_extended_list(self, query):
+        """gets extended info list for the given query"""
+        lib_path = u"plugin://script.extendedinfo?info=%s" % query
+        all_items = self.metadatautils.kodidb.files(lib_path)
+        items_titleandyear_list = []
+        for item in all_items:
+            if 'title' in item and 'year' in item:
+                items_titleandyear_list.append((item['title'], item['year']))
+        return items_titleandyear_list
 
     def get_random_watched_tvshow(self):
         '''gets a random watched or inprogress tvshow from kodi_constants.'''

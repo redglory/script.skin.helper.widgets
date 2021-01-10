@@ -34,23 +34,52 @@ class Media(object):
         self.episodes = Episodes(self.addon, self.metadatautils, self.options)
 
     def listing(self):
-        '''main listing with all our movie nodes'''
+        """main listing with all our media nodes"""
+        tag = self.options.get("tag", "")
+        extended_info_setting = self.options["extended_info"]
+        if tag:
+            label_prefix = u"%s - " % tag
+        else:
+            label_prefix = u""
+        icon = "DefaultMovies.png"
+
         all_items = [
-            (self.addon.getLocalizedString(32011), "inprogress&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32070), "inprogressshowsandmovies&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32005), "recent&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32004), "recommended&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32007), "inprogressandrecommended&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32060), "inprogressandrandom&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32022), "similar&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32059), "random&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32058), "top250&mediatype=media", "DefaultMovies.png"),
-            (self.addon.getLocalizedString(32001), "favourites&mediatype=media", "DefaultMovies.png"),
+            (self.addon.getLocalizedString(32011), "inprogress&mediatype=media", icon),
+            (self.addon.getLocalizedString(32070), "inprogressshowsandmovies&mediatype=media", icon),
+            (self.addon.getLocalizedString(32071), "inprogressnextshowsandmovies&mediatype=media", icon),
+            (self.addon.getLocalizedString(32005), "recent&mediatype=media", icon),
+            (self.addon.getLocalizedString(32004), "recommended&mediatype=media", icon),
+            (self.addon.getLocalizedString(32007), "inprogressandrecommended&mediatype=media", icon),
+            (self.addon.getLocalizedString(32060), "inprogressandrandom&mediatype=media", icon),
+            (self.addon.getLocalizedString(32022), "similar&mediatype=media", icon),
+            (self.addon.getLocalizedString(32059), "random&mediatype=media", icon),
+            (self.addon.getLocalizedString(32058), "top250&mediatype=media", icon),
+            (self.addon.getLocalizedString(32001), "favourites&mediatype=media", icon),
             (self.addon.getLocalizedString(32075), "playlistslisting&mediatype=media",
-             "DefaultMovies.png"),
+             icon),
             (self.addon.getLocalizedString(32077), "playlistslisting&mediatype=media&tag=ref",
-             "DefaultMovies.png")
+             icon)
         ]
+
+
+        all_items = [
+            (label_prefix + self.addon.getLocalizedString(32080), "inprogressepisodesandmovies&mediatype=media&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32088), "unwatchedshowsandmovies&mediatype=media&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32086), "watchagainshowsandmovies&mediatype=media&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32087), "newrelease&mediatype=media&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32081), "randomtop250&mediatype=media&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32004), "toprated&mediatype=media&tag=%s" % tag, icon)
+        ]
+
+        if extended_info_setting:
+            all_items += [
+                (self.addon.getLocalizedString(32100) +' - '+ self.addon.getLocalizedString(32090), "extendedpopulartmdb&mediatype=media", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32090), "extendedpopulartrakt&mediatype=media", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32102), "extendedtrending&mediatype=media", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32105), "extendedmostplayed&mediatype=media", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32108), "extendedmostwatched&mediatype=media", icon)
+            ]
+
         return self.metadatautils.process_method_on_list(create_main_entry, all_items)
 
     def playlistslisting(self):
@@ -133,6 +162,12 @@ class Media(object):
         all_items += self.pvr.recordings()
         return sorted(all_items, key=itemgetter("dateadded"), reverse=True)[:self.options["limit"]]
 
+    def recentshowsandmovies(self):
+        """ get recently added movies and tvshows """
+        all_items = self.movies.recent()
+        all_items += self.tvshows.recent()
+        return sorted(all_items, key=itemgetter("dateadded"), reverse=True)[:self.options["limit"]]
+
     def random(self):
         ''' get random media '''
         all_items = self.movies.random()
@@ -155,6 +190,126 @@ class Media(object):
         all_items = self.movies.inprogress()
         all_items += self.episodes.inprogress()
         return sorted(all_items, key=itemgetter("lastplayed"), reverse=True)[:self.options["limit"]]
+
+    def inprogressepisodesandmovies(self):
+        """ get in progress episodes and movies """
+        all_items = self.movies.inprogress()
+        all_items += self.episodes.inprogress()
+        return sorted(all_items, key=itemgetter("lastplayed"), reverse=True)[:self.options["limit"]]
+
+    def inprogressnextshowsandmovies(self):
+        """ get in-progress/next episodes AS TV Shows and in-progress movies """
+        all_items = self.movies.inprogress()
+        all_items += self.tvshows.nextshows()
+        return sorted(all_items, key=itemgetter("lastplayed"), reverse=True)[:self.options["limit"]]
+
+    def inprogressandrecommended(self):
+        """ get recommended and in progress media """
+        all_items = self.inprogress()
+        all_titles = [item["title"] for item in all_items]
+        for item in self.recommended():
+            if item["title"] not in all_titles:
+                all_items.append(item)
+        return all_items[:self.options["limit"]]
+
+    def inprogressandrandom(self):
+        """ get in progress AND random movies """
+        all_items = self.inprogress()
+        all_ids = [item["movieid"] for item in all_items]
+        for item in self.random():
+            if item["movieid"] not in all_ids:
+                all_items.append(item)
+        return all_items[:self.options["limit"]]
+
+    def watchagainshowsandmovies(self):
+        """ get random recently watched movies and tv shows """
+        filters = [kodi_constants.FILTER_WATCHED]
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        all_items = self.metadatautils.kodidb.movies(sort=kodi_constants.SORT_LASTPLAYED,
+                                                     filters=filters,
+                                                     limits=(0, self.options["limit"]))
+        all_items += self.metadatautils.process_method_on_list(
+            self.tvshows.process_tvshow,
+            self.metadatautils.kodidb.tvshows(sort=kodi_constants.SORT_LASTPLAYED,
+                                              filters=filters + [kodi_constants.FILTER_INPROGRESS],
+                                              filtertype="or",
+                                              limits=(0, self.options["limit"])))
+        return sorted(all_items, key=lambda k: random())[:self.options["limit"]]
+
+    def extendedpopulartmdb(self):
+        """gets popular movies and tvshows from tmdb"""
+        all_items = []
+        all_items += self.movies.extendedpopulartmdb()
+        all_items += self.tvshows.extendedpopulartmdb()
+        return sorted(all_items, key=itemgetter("extendedindex"))[:self.options["limit"]]
+
+    def extendedpopulartrakt(self):
+        """gets popular movies and tvshows from trakt"""
+        all_items = []
+        all_items += self.movies.extendedpopulartrakt()
+        all_items += self.tvshows.extendedpopulartrakt()
+        return sorted(all_items, key=itemgetter("extendedindex"))[:self.options["limit"]]
+
+    def extendedtrending(self):
+        """gets popular movies and tvshows from trakt"""
+        all_items = []
+        all_items += self.movies.extendedtrending()
+        all_items += self.tvshows.extendedtrending()
+        return sorted(all_items, key=itemgetter("extendedindex"))[:self.options["limit"]]
+
+    def extendedmostplayed(self):
+        """gets most played movies and tvshows from trakt"""
+        all_items = []
+        all_items += self.movies.extendedmostplayed()
+        all_items += self.tvshows.extendedmostplayed()
+        return sorted(all_items, key=itemgetter("extendedindex"))[:self.options["limit"]]
+
+    def extendedmostwatched(self):
+        """gets most watched movies and tvshows from trakt"""
+        all_items = []
+        all_items += self.movies.extendedmostwatched()
+        all_items += self.tvshows.extendedmostwatched()
+        return sorted(all_items, key=itemgetter("extendedindex"))[:self.options["limit"]]
+
+    def browsegenres(self):
+        """special entry which can be used to create custom genre listings
+            returns each genre with poster/fanart artwork properties from 5
+            random movies/tvshows in the genre."""
+        # find matches
+        movie_genres = self.metadatautils.kodidb.genres("movie")
+        tvshow_genres = self.metadatautils.kodidb.genres("tvshow")
+        media_genres = []
+        for movie_genre in movie_genres:
+            for tvshow_genre in tvshow_genres:
+                if movie_genre["label"] == tvshow_genre["label"]:
+                    media_genres.append(movie_genre["label"])
+                    break
+        # build genres
+        all_items = []
+        for genre in media_genres:
+            all_items.append(self.process_genre(genre))
+        return all_items
+
+    def process_genre(self, genre):
+        """method to create genre listitem from genre's label"""
+        genre_json = {"art": {}, "label": genre, "title": genre,
+                      "file": u"plugin://script.skin.helper.widgets/?action=forgenre&mediatype=media&genre=%s" % genre,
+                      "isFolder": True, "IsPlayable": "false", "thumbnail": "DefaultGenre.png", "type": "genre"}
+        # randomly select fanart/poster from tvshows OR movies
+        flip_coin = randint(0, 1)
+        if flip_coin:
+            genre_items = self.movies.get_genre_movies(genre, False, 5, kodi_constants.SORT_RANDOM)
+        else:
+            genre_items = self.tvshows.get_genre_tvshows(genre, False, 5, kodi_constants.SORT_RANDOM)
+        if genre_items:
+            for count, item in enumerate(genre_items):
+                genre_json["art"]["poster.%s" % count] = item["art"].get("poster", "")
+                genre_json["art"]["fanart.%s" % count] = item["art"].get("fanart", "")
+                if "fanart" not in genre_json["art"]:
+                    # set genre's primary fanart image to first movie fanart
+                    genre_json["art"]["fanart"] = item["art"].get("fanart", "")
+        return genre_json
 
     def similar(self):
         ''' get similar movies and similar tvshows for given imdbid'''
@@ -228,24 +383,6 @@ class Media(object):
         all_items += self.songs.similar()
         return sorted(all_items, key=lambda k: random.random())[:self.options["limit"]]
 
-    def inprogressandrecommended(self):
-        ''' get recommended AND in progress media '''
-        all_items = self.inprogress()
-        all_titles = [item["title"] for item in all_items]
-        for item in self.recommended():
-            if item["title"] not in all_titles:
-                all_items.append(item)
-        return all_items[:self.options["limit"]]
-
-    def inprogressandrandom(self):
-        ''' get in progress AND random movies '''
-        all_items = self.inprogress()
-        all_ids = [item["movieid"] for item in all_items]
-        for item in self.random():
-            if item["movieid"] not in all_ids:
-                all_items.append(item)
-        return all_items[:self.options["limit"]]
-
     def top250(self):
         ''' get imdb top250 movies in library '''
         all_items = self.movies.top250()
@@ -261,6 +398,19 @@ class Media(object):
     def favourite(self):
         '''synonym to favourites'''
         return self.favourites()
+
+    def get_items_for_recommended(self):
+        """get all items for recommended and top picks methods"""
+        filters = [kodi_constants.FILTER_UNWATCHED]
+        # get all unwatched, not in-progess movies & tvshows
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        movies = self.metadatautils.kodidb.movies(filters=filters)
+        filters.append({"operator": "false", "field": "inprogress",
+                        "value": ""})
+        tvshows = self.metadatautils.process_method_on_list(self.tvshows.process_tvshow,
+                                                            self.metadatautils.kodidb.tvshows(filters=filters))
+        return movies + tvshows
 
     def get_recently_watched_item(self):
         ''' get a random recently watched movie or tvshow '''
@@ -343,6 +493,34 @@ class Media(object):
             item["recommendedscore"] = similarscore / (1+item["playcount"]) / len(ref_items)
         # return sorted list capped by limit
         return sorted(all_items, key=itemgetter("recommendedscore"), reverse=True)[:self.options["limit"]]
+
+    def get_references_last_played(self):
+        """ sort list of mixed movies/tvshows by recommended score"""
+        # get recently watched items
+        num_recent_similar = self.options["num_recent_similar"]
+        all_refs = []
+        all_refs += self.metadatautils.kodidb.tvshows(sort=kodi_constants.SORT_LASTPLAYED,
+                                                      filters=[kodi_constants.FILTER_WATCHED],
+                                                      limits=(0, num_recent_similar))
+        all_refs += self.metadatautils.kodidb.movies(sort=kodi_constants.SORT_LASTPLAYED,
+                                                     filters=[kodi_constants.FILTER_WATCHED],
+                                                     limits=(0, num_recent_similar))
+        return all_refs
+
+    def playlist_recommended(self, all_items):
+        return self.sort_by_recommended(all_items)
+
+    def playlist_random(self, all_items):
+        return sorted(all_items, key=lambda k: random())[:self.options["limit"]]
+
+    def playlist_recent(self, all_items):
+        return sorted(all_items, key=itemgetter("dateadded"), reverse=True)[:self.options["limit"]]
+
+    def playlist_year(self, all_items):
+        return sorted(all_items, key=itemgetter("year"), reverse=True)[:self.options["limit"]]
+
+    def playlist_title(self, all_items):
+        return sorted(all_items, key=itemgetter("title"))[:self.options["limit"]]
 
     def get_similarity_score(self, ref_item, other_item):
         '''

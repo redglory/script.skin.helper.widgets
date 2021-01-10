@@ -26,6 +26,7 @@ class Movies(object):
     def listing(self):
         '''main listing with all our movie nodes'''
         tag = self.options.get("tag", "")
+        extended_info_setting = self.options["extended_info"]
         if tag:
             label_prefix = "%s - " % tag
         else:
@@ -35,6 +36,8 @@ class Movies(object):
             (label_prefix + self.addon.getLocalizedString(32028), "inprogress&mediatype=movies&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32038), "recent&mediatype=movies&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32003), "recommended&mediatype=movies&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32091), "newrelease&mediatype=movies&tag=%s" % tag, icon),
+            (label_prefix + self.addon.getLocalizedString(32083), "toprated&mediatype=movies&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32029),
              "inprogressandrecommended&mediatype=movies&tag=%s" % tag, icon),
             (label_prefix + self.addon.getLocalizedString(32048), "random&mediatype=movies&tag=%s" % tag, icon),
@@ -43,6 +46,7 @@ class Movies(object):
             (label_prefix + xbmc.getLocalizedString(135),
              "browsegenres&mediatype=movies&tag=%s" % tag, "DefaultGenres.png")
         ]
+
         if not tag:
             all_items += [
                 (self.addon.getLocalizedString(32006), "similar&mediatype=movies&tag=%s" % tag, icon),
@@ -50,6 +54,14 @@ class Movies(object):
                 (self.addon.getLocalizedString(32078), "playlistslisting&mediatype=movies", icon),
                 (self.addon.getLocalizedString(32076), "playlistslisting&mediatype=movies&tag=ref", icon),
                 (xbmc.getLocalizedString(20459), "tagslisting&mediatype=movies", icon)
+            ]
+        if extended_info_setting:
+            all_items += [
+                (self.addon.getLocalizedString(32100) +' - '+ self.addon.getLocalizedString(32112), "extendedpopulartmdb&mediatype=movies", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32112), "extendedpopulartrakt&mediatype=movies", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32103), "extendedtrending&mediatype=movies", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32106), "extendedmostplayed&mediatype=movies", icon),
+                (self.addon.getLocalizedString(32101) +' - '+ self.addon.getLocalizedString(32109), "extendedmostwatched&mediatype=movies", icon)
             ]
         return self.metadatautils.process_method_on_list(create_main_entry, all_items)
 
@@ -96,6 +108,16 @@ class Movies(object):
         all_items = self.metadatautils.kodidb.movies(filters=not_playlist_filter)
         # return list sorted by recommended score
         return self.sort_by_recommended(all_items, ref_items)
+
+    def toprated(self):
+        """ library movies with score higher than 7"""
+        filters = [kodi_constants.FILTER_RATING]
+        if self.options["hide_watched"]:
+            filters.append(kodi_constants.FILTER_UNWATCHED)
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        return self.metadatautils.kodidb.movies(sort=kodi_constants.SORT_RATING, filters=filters,
+                                                limits=(0, self.options["limit"]))
 
     def recommended(self):
         ''' get recommended movies - library movies with score higher than 7
@@ -145,6 +167,17 @@ class Movies(object):
         return self.metadatautils.kodidb.movies(sort=kodi_constants.SORT_LASTPLAYED,
                                                 filters=filters,
                                                 limits=(0, self.options["limit"]))
+
+    def newrelease(self):
+        """ get recently added sorted by year movies """
+        filters = []
+        if self.options["hide_watched"]:
+            filters.append(kodi_constants.FILTER_UNWATCHED)
+        if self.options.get("tag"):
+            filters.append({"operator": "contains", "field": "tag", "value": self.options["tag"]})
+        all_items = self.metadatautils.kodidb.movies(sort=kodi_constants.SORT_DATEADDED, filters=filters,
+                                                     limits=(0, self.options["limit"]))
+        return sorted(all_items, key=itemgetter("year"), reverse=True)
 
     def unwatched(self):
         ''' get unwatched movies '''
@@ -253,6 +286,62 @@ class Movies(object):
                 movie["top250_rank"] = int(top_250[imdbnumber])
                 all_items.append(movie)
         return sorted(all_items, key=itemgetter("top250_rank"))[:self.options["limit"]]
+
+    def extendedpopulartmdb(self):
+        """gets popular movies in library from tmdb"""
+        all_items = self.get_extended_matches(self.get_extended_list('popularmovies'))
+        return all_items[:self.options["limit"]]
+
+    def extendedpopulartrakt(self):
+        """gets popular movies in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('traktpopularmovies'))
+        return all_items[:self.options["limit"]]
+
+    def extendedtrending(self):
+        """gets trending movies in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('trendingmovies'))
+        return all_items[:self.options["limit"]]
+
+    def extendedmostplayed(self):
+        """gets most played movies in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('mostplayedmovies'))
+        return all_items[:self.options["limit"]]
+
+    def extendedmostwatched(self):
+        """gets most watched movies in library from trakt"""
+        all_items = self.get_extended_matches(self.get_extended_list('mostwatchedmovies'))
+        return all_items[:self.options["limit"]]
+
+    def get_extended_matches(self,extended_items):
+        """gets movies that are in the given extended info list of items"""
+        all_items = []
+        filters = []
+        fields = ["imdbnumber"]
+        if KODI_VERSION > 16:
+            fields.append("uniqueid")
+        all_movies = self.metadatautils.kodidb.get_json(
+            'VideoLibrary.GetMovies', fields=fields, returntype="movies", filters=filters)
+        for movie in all_movies:
+            imdbnumber = movie["imdbnumber"]
+            if not imdbnumber and "uniqueid" in movie:
+                for value in movie["uniqueid"]:
+                    if value.startswith("tt"):
+                        imdbnumber = value
+            if imdbnumber and imdbnumber in extended_items:
+                movie = self.metadatautils.kodidb.movie(movie["movieid"])
+                movie["extendedindex"] = extended_items.index(imdbnumber)
+                all_items.append(movie)
+        return sorted(all_items, key=itemgetter("extendedindex"))
+
+    def get_extended_list(self,query):
+        """gets extended info list for the given query"""
+        lib_path = u"plugin://script.extendedinfo?info=%s" % query
+        all_items = self.metadatautils.kodidb.files(lib_path)
+        items_imdb_list = []
+        for item in all_items:
+            if 'imdbnumber' in item:
+                items_imdb_list.append(item['imdbnumber'])
+        return items_imdb_list
 
     def browsegenres(self):
         '''

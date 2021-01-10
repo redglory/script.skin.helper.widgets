@@ -69,6 +69,8 @@ class Main(object):
             options["hide_watched"] = True
         options["num_recent_similar"] = int(self.addon.getSetting("num_recent_similar"))
         options["exp_recommended"] = self.addon.getSetting("exp_recommended") == "true"
+        options["mylist"] = self.addon.getSetting("mylist") == "true"
+        options["extended_info"] = self.addon.getSetting("extended_info") == "true"
         options["hide_watched_similar"] = self.addon.getSetting("hide_watched_similar") == "true"
         options["next_inprogress_only"] = self.addon.getSetting("nextup_inprogressonly") == "true"
         options["episodes_enable_specials"] = self.addon.getSetting("episodes_enable_specials") == "true"
@@ -142,7 +144,9 @@ class Main(object):
                 self.options["skipcache"] = "true"
         elif self.options["action"] == "playlist" and self.options["mediatype"] == "media":
             # if action is mixed playlist, use playlist labels
-            cache_id = self.options.get("movie_label")+self.options.get("tv_label")
+            cache_id = self.options.get("movie_label") + self.options.get("tv_label") + self.options.get("sort")
+        elif self.options["action"] == "forgenre" and "genre" in self.options:
+            cache_id = self.options.get("genre")
         else:
             # use tag otherwise
             cache_id = self.options.get("tag")
